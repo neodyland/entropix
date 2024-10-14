@@ -55,6 +55,7 @@ def main():
     parser.add_argument("--device", type=str, default=device.type)
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--host", type=str, default="0.0.0.0")
+    parser.add_argument("--max_length", type=int, default=512)
     args = parser.parse_args()
     device = torch.device(args.device)
     print(f"Using device: {device}")
@@ -77,7 +78,7 @@ def main():
     @app.post("/chat/completions")
     async def chat_completion(body: Request) -> Response:
         j = adapter.validate_python(await body.json())
-        max_length = j.get("max_completion_tokens") or 512
+        max_length = j.get("max_completion_tokens") or args.max_length
         messages = list(j["messages"])
         if j.get("stream"):
 
