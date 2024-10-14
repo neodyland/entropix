@@ -1,7 +1,12 @@
 from entropixing.model import forward
 from entropixing.sampler import sample
 from entropixing.kv_cache import KVCache
-from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig
+from transformers import (
+    AutoTokenizer,
+    AutoModelForCausalLM,
+    AutoConfig,
+    PretrainedConfig,
+)
 import torch
 
 if torch.backends.mps.is_available():
@@ -92,17 +97,12 @@ def main():
 
     parser = ArgumentParser()
     parser.add_argument(
-        "--model",
-        type=str,
-        required=True,
-        choices=[
-            "google/gemma-2-2b-it",
-            "google/gemma-2-2b-jpn-it",
-            "meta-llama/Llama-3.2-1B-Instruct",
-            "meta-llama/Llama-3.2-3B-Instruct",
-        ],
+        "--model", type=str, required=True, default="google/gemma-2-2b-jpn-it"
     )
     args = parser.parse_args()
+    arch: PretrainedConfig = AutoConfig.from_pretrained(args.model)
+    if arch.architectures[0] not in ["Gemma2ForCausalLM", "LlamaForCausalLM"]:
+        raise ValueError(f"Unsupported model architecture: {arch.architectures[0]}")
     with torch.inference_mode():
         dtype = torch.bfloat16
         weights = AutoModelForCausalLM.from_pretrained(
