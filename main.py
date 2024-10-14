@@ -88,17 +88,24 @@ def build_attn_mask(seqlen: int, start_pos: int) -> torch.Tensor:
 
 
 def main():
-    model = "meta-llama/Llama-3.2-1B-Instruct"
-    model = "google/gemma-2-2b-jpn-it"
+    from argparse import ArgumentParser
+    parser = ArgumentParser()
+    parser.add_argument("--model", type=str, required=True,choices=[
+        "google/gemma-2-2b-it",
+        "google/gemma-2-2b-jpn-it",
+        "meta-llama/Llama-3.2-1B-Instruct",
+        "meta-llama/Llama-3.2-3B-Instruct"
+    ])
+    args = parser.parse_args()
     with torch.inference_mode():
         dtype = torch.bfloat16
         weights = AutoModelForCausalLM.from_pretrained(
-            model,
+            args.model,
             device_map=device,
             torch_dtype=torch.bfloat16,
         )
 
-        tokenizer = AutoTokenizer.from_pretrained(model)
+        tokenizer = AutoTokenizer.from_pretrained(args.model)
         prompt = "ビションフリーゼとは、"
         inputs = tokenizer.encode(prompt, return_tensors="pt")
 
