@@ -25,6 +25,7 @@ torch.set_float32_matmul_precision("high")
 def main():
     from argparse import ArgumentParser
 
+    global device
     parser = ArgumentParser()
     parser.add_argument(
         "--model", type=str, required=True, default="google/gemma-2-2b-jpn-it"
