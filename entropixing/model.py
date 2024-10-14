@@ -1,7 +1,6 @@
 import math
 import torch
 import torch.nn.functional as F
-from typing import Union
 from .kv_cache import KVCache
 from .attn_stats import AttnStats
 from transformers import (
@@ -9,10 +8,7 @@ from transformers import (
     AutoModelForCausalLM,
     Gemma2ForCausalLM,
     LlamaForCausalLM,
-)
-from transformers.models.gemma2.modeling_gemma2 import (
-    Gemma2DecoderLayer,
-    Gemma2Attention,
+    Qwen2ForCausalLM,
 )
 
 DEFAULT_MASK_VALUE = -0.7 * float(torch.finfo(torch.float32).max)
@@ -54,7 +50,7 @@ def reverse_permute(
 def attention(
     weights: AutoModelForCausalLM,
     x: torch.Tensor,
-    layer_weights: Gemma2Attention,
+    layer_weights,
     model_params: PretrainedConfig,
     cur_pos: int,
     layer_idx: int,
@@ -101,7 +97,7 @@ def attention(
             scores = scores / model_params.attn_logit_softcapping
             scores = torch.tanh(scores)
             scores = scores * model_params.attn_logit_softcapping
-    elif isinstance(weights, LlamaForCausalLM):
+    elif isinstance(weights, LlamaForCausalLM) or isinstance(weights, Qwen2ForCausalLM):
         scores = scores / math.sqrt(model_params.head_dim)
     pre_scores = scores
     scores = pre_scores.to(torch.float32)  # Always do attention softmax at float32
@@ -145,7 +141,7 @@ def forward(
         device=device,
     )
     for i in range(model_params.num_hidden_layers):
-        layer: Gemma2DecoderLayer = weights.model.layers[i]
+        layer = weights.model.layers[i]
         if isinstance(weights, Gemma2ForCausalLM):
             if not bool(i % 2) and attn_mask is not None:
                 min_dtype = torch.finfo(h.dtype).min
@@ -168,14 +164,14 @@ def forward(
             kvcache,
             attn_mask=attn_mask,
         )
-        if isinstance(weights, LlamaForCausalLM):
+        if isinstance(weights, LlamaForCausalLM) or isinstance(
+            weights, Qwen2ForCausalLM
+        ):
             h = h + h_attn
             h_mlp = layer.post_attention_layernorm(h)
         elif isinstance(weights, Gemma2ForCausalLM):
             h = h + layer.post_attention_layernorm(h_attn)
             h_mlp = layer.pre_feedforward_layernorm(h)
-        else:
-            raise ValueError(f"Unsupported model type: {type(weights)}")
         attn_stats = attn_stats.update(scores[:, :, -1, :], i)
         h_mlp = layer.mlp(h_mlp)
         if isinstance(weights, Gemma2ForCausalLM):

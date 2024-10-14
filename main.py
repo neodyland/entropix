@@ -17,7 +17,7 @@ elif torch.cuda.is_available():
 else:
     device = torch.device("cpu")
 
-print(f"Using device: {device}")
+print(f"Default device: {device}")
 
 torch.set_float32_matmul_precision("high")
 
@@ -29,21 +29,37 @@ def main():
     parser.add_argument(
         "--model", type=str, required=True, default="google/gemma-2-2b-jpn-it"
     )
+    parser.add_argument(
+        "--dtype",
+        type=str,
+        choices=["float16", "bfloat16", "float32"],
+        default="bfloat16",
+    )
+    parser.add_argument("--max_length", type=int, default=4096)
+    parser.add_argument("--prompt", type=str, default="大規模言語モデルとは、")
+    parser.add_argument("--device", type=str, default=device.type)
     args = parser.parse_args()
+    device = torch.device(args.device)
+    print(f"Using device: {device}")
     arch: PretrainedConfig = AutoConfig.from_pretrained(args.model)
-    if arch.architectures[0] not in ["Gemma2ForCausalLM", "LlamaForCausalLM"]:
+    if arch.architectures[0] not in [
+        "Gemma2ForCausalLM",
+        "LlamaForCausalLM",
+        "Qwen2ForCausalLM",
+    ]:
         raise ValueError(f"Unsupported model architecture: {arch.architectures[0]}")
+    if arch.architectures[0] == "Qwen2ForCausalLM":
+        raise NotImplementedError("Qwen2ForCausalLM is not supported yet.")
     with torch.inference_mode():
-        dtype = torch.bfloat16
+        dtype = getattr(torch, args.dtype)
         weights = AutoModelForCausalLM.from_pretrained(
             args.model,
             device_map=device,
-            torch_dtype=torch.bfloat16,
+            torch_dtype=dtype,
         )
 
         tokenizer = AutoTokenizer.from_pretrained(args.model)
-        prompt = "ビションフリーゼとは、"
-        inputs = tokenizer.encode(prompt, return_tensors="pt")
+        inputs = tokenizer.encode(args.prompt, return_tensors="pt")
 
         def generate(weights: AutoModelForCausalLM, tokens: torch.tensor):
             config: AutoConfig = weights.config
@@ -55,6 +71,11 @@ def main():
                 cur_pos,
                 device=device,
             )
+            if not hasattr(config, "head_dim"):
+                setattr(
+                    config, "head_dim", config.hidden_size // config.num_attention_heads
+                )
+                weights.config = config
             freqs_cis = precompute_freqs_cis(
                 config.head_dim,
                 config.max_position_embeddings,
@@ -94,7 +115,7 @@ def main():
             stop = torch.tensor(
                 [tokenizer.eos_token_id], device=device, dtype=torch.int32
             )
-            while cur_pos < 8192:
+            while cur_pos < args.max_length:
                 cur_pos += 1
                 logits, kvcache, scores, _stats = forward(
                     weights,
@@ -111,7 +132,7 @@ def main():
                 if torch.isin(next_token, stop).any():
                     break
 
-        print(prompt)
+        print(args.prompt)
         generate(weights, inputs)
 
 
