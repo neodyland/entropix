@@ -51,12 +51,12 @@ def main():
         args.model,
         device_map=device,
         torch_dtype=dtype,
-    )
+    ).eval()
 
     tokenizer = AutoTokenizer.from_pretrained(args.model)
     inputs = tokenizer.encode(args.prompt, return_tensors="pt")
 
-    print(args.prompt)
+    print(args.prompt, end="", flush=True)
     it = generate(
         weights, inputs, device, dtype, [tokenizer.eos_token_id], args.max_length
     )
