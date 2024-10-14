@@ -110,6 +110,14 @@ def main():
                             model=j["model"],
                             object="chat.completion.chunk",
                         ).model_dump_json()}\n\n"
+                    else:
+                        yield f"data: {ChatCompletionChunk(
+                            id=str(uuid4()),
+                            choices=[Choice(delta=ChoiceDelta(content="⌫"), index=0)],
+                            created=time.time() // 1000,
+                            model=j["model"],
+                            object="chat.completion.chunk",
+                        ).model_dump_json()}\n\n"
                 yield f"data: {ChatCompletionChunk(
                     id=str(uuid4()),
                     choices=[
