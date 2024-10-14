@@ -49,8 +49,6 @@ def main():
         "Qwen2ForCausalLM",
     ]:
         raise ValueError(f"Unsupported model architecture: {arch.architectures[0]}")
-    if arch.architectures[0] == "Qwen2ForCausalLM":
-        raise NotImplementedError("Qwen2ForCausalLM is not supported yet.")
     with torch.inference_mode():
         dtype = getattr(torch, args.dtype)
         weights = AutoModelForCausalLM.from_pretrained(

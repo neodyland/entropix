@@ -68,6 +68,16 @@ def attention(
             layer_weights.q_proj.weight.size(-2),
             layer_weights.q_proj.weight.size(-1),
         ),
+        bias=(
+            reverse_permute(
+                layer_weights.q_proj.bias.view(1, -1),
+                model_params.num_attention_heads,
+                layer_weights.q_proj.bias.size(-1),
+                1,
+            ).squeeze()
+            if layer_weights.q_proj.bias is not None
+            else None
+        ),
     ).reshape(bsz, -1, model_params.num_attention_heads, model_params.head_dim)
     xk = F.linear(
         x,
@@ -77,8 +87,18 @@ def attention(
             layer_weights.k_proj.weight.size(-2),
             layer_weights.k_proj.weight.size(-1),
         ),
+        bias=(
+            reverse_permute(
+                layer_weights.k_proj.bias.view(1, -1),
+                model_params.num_key_value_heads,
+                layer_weights.k_proj.bias.size(-1),
+                1,
+            ).squeeze()
+            if layer_weights.k_proj.bias is not None
+            else None
+        ),
     ).reshape(bsz, -1, model_params.num_key_value_heads, model_params.head_dim)
-    xv = F.linear(x, layer_weights.v_proj.weight).reshape(
+    xv = layer_weights.v_proj(x).reshape(
         bsz, -1, model_params.num_key_value_heads, model_params.head_dim
     )
     xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis, dtype=xq.dtype)
