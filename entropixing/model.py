@@ -47,6 +47,25 @@ def reverse_permute(
     )
 
 
+def linear(
+    emb: torch.Tensor,
+    nah: int,
+    linear: torch.nn.Linear,
+) -> torch.Tensor:
+    weight = linear.weight
+    weight = reverse_permute(
+        weight, n_heads=nah, dim1=weight.size(-2), dim2=weight.size(-1)
+    )
+    bias = (
+        reverse_permute(
+            linear.bias.view(1, -1), n_heads=nah, dim1=linear.bias.size(-1), dim2=1
+        )
+        if linear.bias is not None
+        else None
+    )
+    return F.linear(emb, weight, bias)
+
+
 def attention(
     weights: AutoModelForCausalLM,
     x: torch.Tensor,
@@ -60,44 +79,12 @@ def attention(
 ) -> Tuple[torch.Tensor, KVCache, torch.Tensor]:
     bsz, _, _ = x.shape
     n_rep = model_params.num_attention_heads // model_params.num_key_value_heads
-    xq = F.linear(
-        x,
-        reverse_permute(
-            layer_weights.q_proj.weight,
-            model_params.num_attention_heads,
-            layer_weights.q_proj.weight.size(-2),
-            layer_weights.q_proj.weight.size(-1),
-        ),
-        bias=(
-            reverse_permute(
-                layer_weights.q_proj.bias.view(1, -1),
-                model_params.num_attention_heads,
-                layer_weights.q_proj.bias.size(-1),
-                1,
-            ).squeeze()
-            if layer_weights.q_proj.bias is not None
-            else None
-        ),
-    ).reshape(bsz, -1, model_params.num_attention_heads, model_params.head_dim)
-    xk = F.linear(
-        x,
-        reverse_permute(
-            layer_weights.k_proj.weight,
-            model_params.num_key_value_heads,
-            layer_weights.k_proj.weight.size(-2),
-            layer_weights.k_proj.weight.size(-1),
-        ),
-        bias=(
-            reverse_permute(
-                layer_weights.k_proj.bias.view(1, -1),
-                model_params.num_key_value_heads,
-                layer_weights.k_proj.bias.size(-1),
-                1,
-            ).squeeze()
-            if layer_weights.k_proj.bias is not None
-            else None
-        ),
-    ).reshape(bsz, -1, model_params.num_key_value_heads, model_params.head_dim)
+    xq = linear(x, model_params.num_attention_heads, layer_weights.q_proj).reshape(
+        bsz, -1, model_params.num_attention_heads, model_params.head_dim
+    )
+    xk = linear(x, model_params.num_key_value_heads, layer_weights.k_proj).reshape(
+        bsz, -1, model_params.num_key_value_heads, model_params.head_dim
+    )
     xv = layer_weights.v_proj(x).reshape(
         bsz, -1, model_params.num_key_value_heads, model_params.head_dim
     )
