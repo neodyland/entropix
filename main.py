@@ -6,6 +6,7 @@ from transformers import (
 )
 import torch
 from entropixing.generate import generate, stream
+from rich.console import Console
 
 if torch.backends.mps.is_available():
     device = torch.device("mps")
@@ -34,10 +35,16 @@ def main():
         default="bfloat16",
     )
     parser.add_argument("--max_length", type=int, default=4096)
-    parser.add_argument("--prompt", type=str, default="大規模言語モデルとは、")
+    parser.add_argument("--prompt", type=str, default="Hello, my name is ")
     parser.add_argument("--device", type=str, default=device.type)
+    parser.add_argument("--top_p", type=float, default=0.95)
+    parser.add_argument("--top_k", type=int, default=40)
+    parser.add_argument("--min_p", type=int, default=0)
+    parser.add_argument("--repetition_penalty", type=float, default=1.0)
+    parser.add_argument("--seed", type=int)
     args = parser.parse_args()
     device = torch.device(args.device)
+    console = Console()
     print(f"Using device: {device}")
     arch: PretrainedConfig = AutoConfig.from_pretrained(args.model)
     if arch.architectures[0] not in [
@@ -56,12 +63,30 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained(args.model)
     inputs = tokenizer.encode(args.prompt, return_tensors="pt")
 
-    print(args.prompt, end="", flush=True)
+    console.print(args.prompt, style="green", end="", flush=True)
     it = generate(
-        weights, inputs, device, dtype, [tokenizer.eos_token_id], args.max_length
+        weights,
+        inputs,
+        device,
+        dtype,
+        [tokenizer.eos_token_id],
+        args.max_length,
+        args.top_p,
+        args.top_k,
+        args.min_p,
+        args.repetition_penalty,
+        args.seed,
     )
     for token in stream(it, tokenizer):
-        print(token, end="", flush=True)
+        if "text" in token:
+            style = ""
+            if token["entropy"] > 3:
+                style = "bold"
+            elif token["varentropy"] > 15:
+                style += "blue"
+            console.print(token["text"], style=style, end="")
+        elif "back" in token:
+            console.print("⌫", style="red", end="")
 
 
 if __name__ == "__main__":

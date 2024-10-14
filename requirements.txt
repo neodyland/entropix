@@ -4,3 +4,4 @@ accelerate
 fastapi
 uvicorn
 openai
+rich

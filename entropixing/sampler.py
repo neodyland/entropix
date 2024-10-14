@@ -1,6 +1,6 @@
 import torch
 import torch.nn.functional as F
-from typing import Tuple, Dict, Optional
+from typing import Tuple, Optional
 from dataclasses import dataclass
 
 LN_2 = 0.69314718056  # ln(2) = 1.0 / LOG2_E
@@ -34,11 +34,21 @@ def _sample(
     top_p=0.90,
     top_k=27,
     min_p: float = 0.0,
+    repetition_penalty: float = 1.0,
+    prev_tokens: torch.Tensor = None,
     generator: torch.Generator = None,
 ) -> torch.Tensor:
     device = logits.device
     bsz = logits.shape[0]
     logit = logits[:, -1]
+    if repetition_penalty != 1.0 and prev_tokens is not None:
+        score = torch.gather(logit, 1, prev_tokens)
+        # if score < 0 then repetition penalty has to be multiplied
+        # if score > 0 then repetition penalty has to be divided
+        score = torch.where(
+            score < 0, score * repetition_penalty, score / repetition_penalty
+        )
+        logit.scatter_(1, prev_tokens, score)
     probs = F.softmax(logit / temperature, dim=-1)
 
     # Apply min_p sampling
@@ -80,15 +90,21 @@ class CaluclateMetricsOutput:
     interaction_strength: torch.Tensor
 
 
-def calculate_metrics(
-    logits: torch.Tensor, attention_scores: torch.Tensor
-) -> Dict[str, torch.Tensor]:
+def calculate_metrics(logits: torch.Tensor, attention_scores: torch.Tensor):
     entropy, varentropy = calculate_varentropy_logsoftmax(logits)
+    # NB chua: filter to non-zero values because future values are always zero (causal mask)
+    # another implementation would be to pass in or calculate the number of indices at play
+    # this is _probably_ fine though.
+    attention_scores = torch.where(
+        attention_scores != 0.0,
+        attention_scores,
+        torch.full_like(attention_scores, float("-inf")),
+    )
     attention_probs = F.softmax(attention_scores, dim=-1)
     attn_entropy = -torch.sum(
         attention_probs * torch.log2(torch.clamp(attention_probs, 1e-10, 1.0)), dim=-1
     )
-    attn_varentropy = torch.var(attn_entropy, dim=-1)
+    attn_varentropy = torch.var(attn_entropy, dim=1)
 
     # Add a small epsilon to avoid NaN when all values are the same
     attn_varentropy = torch.where(
@@ -98,8 +114,12 @@ def calculate_metrics(
     agreement = torch.mean(
         torch.abs(attention_probs - mean_attention.unsqueeze(1)), dim=(1, 2)
     )
-
-    interaction_strength = torch.mean(torch.abs(attention_scores), dim=(1, 2, 3))
+    non_inf_attn_scores = torch.where(
+        attention_scores != float("-inf"),
+        attention_scores,
+        torch.full_like(attention_scores, torch.nan),
+    )
+    interaction_strength = torch.nanmean(torch.abs(non_inf_attn_scores), dim=(1, 2, 3))
 
     return CaluclateMetricsOutput(
         logits_entropy=torch.mean(entropy),
@@ -119,14 +139,14 @@ def adaptive_sample(
     base_temp: float = 0.666,
     base_top_p: float = 0.90,
     base_top_k: int = 40,
-    base_min_p: float = 0.03,
+    base_min_p: float = 0.01,
     generator: torch.Generator = None,
 ) -> torch.Tensor:
     logits_uncertainty = metrics.logits_entropy + metrics.logits_varentropy
     attn_uncertainty = metrics.attn_entropy + metrics.attn_varentropy
 
     temperature = base_temp * (
-        1 + 0.3 * logits_uncertainty + 0.2 * attn_uncertainty - 0.2 * metrics.agreement
+        1 + 0.3 * logits_uncertainty + 0.2 * attn_uncertainty - 2 * metrics.agreement
     )
     top_p = torch.clamp(base_top_p * (1 + 0.1 * metrics.attn_varentropy), 0.1, 1.0)
     top_k = int(
@@ -136,15 +156,14 @@ def adaptive_sample(
                 * (
                     1
                     + 0.3 * metrics.interaction_strength.item()
-                    - 0.2 * metrics.agreement.item()
+                    - 2 * metrics.agreement.item()
                 )
             ),
             min=1,
             max=100,
         ).item()
     )
-    min_p = torch.clamp(base_min_p * (1 - 0.5 * logits_uncertainty), 0.01, 0.5)
-
+    min_p = torch.clamp(base_min_p * (2 - 00.5 * logits_uncertainty), 0.01, 0.5)
     samples = []
     for _ in range(n_samples):
         sample = _sample(
@@ -193,6 +212,7 @@ def sample(
     top_p=0.90,
     top_k=27,
     min_p: float = 0.0,
+    repetition_penalty: float = 1.0,
     generator: Optional[torch.Generator] = None,
 ) -> torch.Tensor:
     device = logits.device
@@ -226,13 +246,14 @@ def sample(
                 top_p=top_p,
                 top_k=top_k,
                 min_p=min_p,
+                repetition_penalty=repetition_penalty,
                 generator=generator,
             )
 
     # Low Entropy, High Varentropy: "exploring forks in the path"
     elif ent < 5.0 and vent > 5.0:
         temp_adj = (
-            1.2 + 0.3 * interaction_strength
+            1.2 + 0.03 * interaction_strength
         )  # Increase temperature based on interaction strength
         top_k_adj = max(
             5, int(top_k * (1 + 0.5 * (1 - agreement)))

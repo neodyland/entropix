@@ -56,6 +56,11 @@ def main():
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--host", type=str, default="0.0.0.0")
     parser.add_argument("--max_length", type=int, default=512)
+    parser.add_argument("--top_p", type=float, default=0.95)
+    parser.add_argument("--top_k", type=int, default=40)
+    parser.add_argument("--min_p", type=int, default=0)
+    parser.add_argument("--repetition_penalty", type=float, default=1.0)
+    parser.add_argument("--seed", type=int)
     args = parser.parse_args()
     device = torch.device(args.device)
     print(f"Using device: {device}")
@@ -80,17 +85,31 @@ def main():
         j = adapter.validate_python(await body.json())
         max_length = j.get("max_completion_tokens") or args.max_length
         messages = list(j["messages"])
+        top_p = j.get("top_p", args.top_p)
+        top_k = j.get("top_logprobs", args.top_k)
+        min_p = args.min_p
+        repetition_penalty = j.get("frequency_penalty", args.repetition_penalty)
+        seed = j.get("seed", args.seed)
         if j.get("stream"):
 
             async def stream_generator():
-                async for chunk in gen(messages, max_length):
-                    yield f"data: {ChatCompletionChunk(
-                        id=str(uuid4()),
-                        choices=[Choice(delta=ChoiceDelta(content=chunk), index=0)],
-                        created=time.time() // 1000,
-                        model=j["model"],
-                        object="chat.completion.chunk",
-                    ).model_dump_json()}\n\n"
+                async for chunk in gen(
+                    messages,
+                    max_length,
+                    top_p,
+                    top_k,
+                    min_p,
+                    repetition_penalty,
+                    seed,
+                ):
+                    if "text" in chunk:
+                        yield f"data: {ChatCompletionChunk(
+                            id=str(uuid4()),
+                            choices=[Choice(delta=ChoiceDelta(content=chunk["text"]), index=0)],
+                            created=time.time() // 1000,
+                            model=j["model"],
+                            object="chat.completion.chunk",
+                        ).model_dump_json()}\n\n"
                 yield f"data: {ChatCompletionChunk(
                     id=str(uuid4()),
                     choices=[
@@ -105,7 +124,15 @@ def main():
                 content=stream_generator(), media_type="text/event-stream"
             )
         else:
-            text = await gen_no_stream(messages, max_length)
+            text = await gen_no_stream(
+                messages,
+                max_length,
+                top_p,
+                top_k,
+                min_p,
+                repetition_penalty,
+                seed,
+            )
             return Response(
                 content=ChatCompletion(
                     id=str(uuid4()),
@@ -148,20 +175,55 @@ def main():
     run(app, host=args.host, port=args.port)
 
 
-async def gen_no_stream(conv, max_length):
+async def gen_no_stream(
+    conv,
+    max_length,
+    top_p,
+    top_k,
+    min_p,
+    repetition_penalty,
+    seed,
+):
     text = ""
-    async for chunk in gen(conv, max_length):
-        text += chunk
+    async for chunk in gen(
+        conv,
+        max_length,
+        top_p,
+        top_k,
+        min_p,
+        repetition_penalty,
+        seed,
+    ):
+        if "text" in chunk:
+            text += chunk["text"]
     return text
 
 
-async def gen(conv, max_length):
+async def gen(
+    conv,
+    max_length,
+    top_p,
+    top_k,
+    min_p,
+    repetition_penalty,
+    seed,
+):
     inputs = tokenizer.apply_chat_template(
         conv, return_tensors="pt", add_generation_prompt=True
     )
     async with lock:
         it = generate(
-            weights, inputs, device, dtype, [tokenizer.eos_token_id], max_length
+            weights,
+            inputs,
+            device,
+            dtype,
+            [tokenizer.eos_token_id],
+            max_length,
+            top_p,
+            top_k,
+            min_p,
+            repetition_penalty,
+            seed,
         )
         for token in stream(it, tokenizer):
             yield token
