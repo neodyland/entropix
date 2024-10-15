@@ -2,8 +2,6 @@ from pydantic import TypeAdapter
 from transformers import (
     AutoTokenizer,
     AutoModelForCausalLM,
-    AutoConfig,
-    PretrainedConfig,
 )
 import torch
 import json
@@ -19,6 +17,8 @@ from openai.types.chat.chat_completion import Choice as NostreamChoice
 from openai.types.chat.completion_create_params import CompletionCreateParams
 from uuid import uuid4
 import time
+
+from entropixing.utils import is_supported_model
 
 if torch.backends.mps.is_available():
     device = torch.device("mps")
@@ -64,13 +64,8 @@ def main():
     args = parser.parse_args()
     device = torch.device(args.device)
     print(f"Using device: {device}")
-    arch: PretrainedConfig = AutoConfig.from_pretrained(args.model)
-    if arch.architectures[0] not in [
-        "Gemma2ForCausalLM",
-        "LlamaForCausalLM",
-        "Qwen2ForCausalLM",
-    ]:
-        raise ValueError(f"Unsupported model architecture: {arch.architectures[0]}")
+    if not is_supported_model(args.model):
+        raise ValueError("Unsupported model")
     dtype = getattr(torch, args.dtype)
     weights = AutoModelForCausalLM.from_pretrained(
         args.model,
@@ -232,6 +227,7 @@ async def gen(
             min_p,
             repetition_penalty,
             seed,
+            False,
         )
         for token in stream(it, tokenizer):
             yield token

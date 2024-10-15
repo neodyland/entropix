@@ -9,6 +9,7 @@ from transformers import (
     Gemma2ForCausalLM,
     LlamaForCausalLM,
     Qwen2ForCausalLM,
+    MistralForCausalLM,
 )
 
 DEFAULT_MASK_VALUE = -0.7 * float(torch.finfo(torch.float32).max)
@@ -59,7 +60,7 @@ def linear(
     bias = (
         reverse_permute(
             linear.bias.view(1, -1), n_heads=nah, dim1=linear.bias.size(-1), dim2=1
-        )
+        ).squeeze()
         if linear.bias is not None
         else None
     )
@@ -104,7 +105,11 @@ def attention(
             scores = scores / model_params.attn_logit_softcapping
             scores = torch.tanh(scores)
             scores = scores * model_params.attn_logit_softcapping
-    elif isinstance(weights, LlamaForCausalLM) or isinstance(weights, Qwen2ForCausalLM):
+    elif (
+        isinstance(weights, LlamaForCausalLM)
+        or isinstance(weights, MistralForCausalLM)
+        or isinstance(weights, Qwen2ForCausalLM)
+    ):
         scores = scores / math.sqrt(model_params.head_dim)
     pre_scores = scores
     scores = pre_scores.to(torch.float32)  # Always do attention softmax at float32
@@ -171,8 +176,10 @@ def forward(
             kvcache,
             attn_mask=attn_mask,
         )
-        if isinstance(weights, LlamaForCausalLM) or isinstance(
-            weights, Qwen2ForCausalLM
+        if (
+            isinstance(weights, LlamaForCausalLM)
+            or isinstance(weights, MistralForCausalLM)
+            or isinstance(weights, Qwen2ForCausalLM)
         ):
             h = h + h_attn
             h_mlp = layer.post_attention_layernorm(h)

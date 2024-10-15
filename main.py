@@ -1,11 +1,10 @@
 from transformers import (
     AutoTokenizer,
     AutoModelForCausalLM,
-    AutoConfig,
-    PretrainedConfig,
 )
 import torch
 from entropixing.generate import generate, stream
+from entropixing.utils import is_supported_model
 from rich.console import Console
 
 if torch.backends.mps.is_available():
@@ -46,13 +45,8 @@ def main():
     device = torch.device(args.device)
     console = Console()
     print(f"Using device: {device}")
-    arch: PretrainedConfig = AutoConfig.from_pretrained(args.model)
-    if arch.architectures[0] not in [
-        "Gemma2ForCausalLM",
-        "LlamaForCausalLM",
-        "Qwen2ForCausalLM",
-    ]:
-        raise ValueError(f"Unsupported model architecture: {arch.architectures[0]}")
+    if not is_supported_model(args.model):
+        raise ValueError("Unsupported model")
     dtype = getattr(torch, args.dtype)
     weights = AutoModelForCausalLM.from_pretrained(
         args.model,

@@ -1,4 +1,5 @@
 import torch
+from transformers import AutoConfig, PretrainedConfig
 
 
 def apply_scaling(freqs: torch.Tensor) -> torch.Tensor:
@@ -75,3 +76,13 @@ def build_attn_mask(
             .to(device)
         )
     return mask
+
+
+def is_supported_model(mod: str):
+    arch: PretrainedConfig = AutoConfig.from_pretrained(mod)
+    return arch.architectures[0] in [
+        "Gemma2ForCausalLM",
+        "LlamaForCausalLM",
+        "Qwen2ForCausalLM",
+        "MistralForCausalLM",
+    ]

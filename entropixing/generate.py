@@ -21,6 +21,7 @@ def generate(
     min_p: int = 0,
     repetition_penalty: float = 1.0,
     seed: Optional[int] = None,
+    go_back: bool = True,
 ):
     if seed is not None:
         generator = torch.Generator(device=device).manual_seed(seed)
@@ -97,7 +98,7 @@ def generate(
 
         # basic weighting to prevent backspacing too much
         threshold = 5.0 + 2 * num_recent_deletes
-        if ent > threshold and vent > threshold and cur_pos > seqlen + 4:
+        if ent > threshold and vent > threshold and cur_pos > seqlen + 4 and go_back:
             #    backspace and pop the last token
             num_recent_deletes += 1
             # reset to the position before the last token, regenerate the token
@@ -125,7 +126,7 @@ def generate(
         )
         gen_tokens = torch.cat((gen_tokens, next_token), dim=1)
         yield {
-            "token": next_token.tolist()[0],
+            "token": next_token.tolist()[0][0],
             "temperature": temperature,
             "entropy": ent.item(),
             "varentropy": vent.item(),
@@ -143,17 +144,18 @@ def is_valid_str(s: str):
 
 
 def stream(it, tokenizer):
-    text_cache = ""
+    text_cache = []
     for token in it:
         if "back" in token:
             yield {"back": True}
         else:
-            text_cache += tokenizer.decode(token["token"], skip_special_tokens=True)
-            if is_valid_str(text_cache):
+            text_cache.append(token["token"])
+            dec = tokenizer.decode(text_cache, skip_special_tokens=True)
+            if is_valid_str(dec):
                 yield {
-                    "text": text_cache,
+                    "text": dec,
                     "tempeature": token["temperature"],
                     "entropy": token["entropy"],
                     "varentropy": token["varentropy"],
                 }
-                text_cache = ""
+                text_cache = []
