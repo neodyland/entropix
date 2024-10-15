@@ -5,3 +5,4 @@ fastapi
 uvicorn
 openai
 rich
+datasets
