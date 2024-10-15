@@ -71,7 +71,6 @@ def generate(
     ent, vent = metrics.logits_entropy, metrics.logits_varentropy
     yield {
         "token": next_token.item(),
-        "temperature": -1.0,
         "entropy": ent.item(),
         "varentropy": vent.item(),
     }
@@ -127,7 +126,6 @@ def generate(
         gen_tokens = torch.cat((gen_tokens, next_token), dim=1)
         yield {
             "token": next_token.tolist()[0][0],
-            "temperature": temperature,
             "entropy": ent.item(),
             "varentropy": vent.item(),
         }
@@ -154,7 +152,6 @@ def stream(it, tokenizer):
             if is_valid_str(dec):
                 yield {
                     "text": dec,
-                    "tempeature": token["temperature"],
                     "entropy": token["entropy"],
                     "varentropy": token["varentropy"],
                 }
