@@ -41,6 +41,8 @@ def main():
     parser.add_argument("--min_p", type=int, default=0)
     parser.add_argument("--repetition_penalty", type=float, default=1.0)
     parser.add_argument("--seed", type=int)
+    parser.add_argument("--print_back", action="store_true")
+    parser.add_argument("--go_back", action="store_true")
     args = parser.parse_args()
     device = torch.device(args.device)
     console = Console()
@@ -70,6 +72,7 @@ def main():
         args.min_p,
         args.repetition_penalty,
         args.seed,
+        args.go_back,
     )
     for token in stream(it, tokenizer):
         if "text" in token:
@@ -80,7 +83,10 @@ def main():
                 style += "blue"
             console.print(token["text"], style=style, end="")
         elif "back" in token:
-            console.print("⌫", style="red", end="")
+            if args.print_back:
+                console.print("⌫", style="red", end="")
+            else:
+                console.print("\b \b", end="")
 
 
 if __name__ == "__main__":

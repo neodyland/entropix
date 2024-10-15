@@ -42,6 +42,8 @@ def main():
     parser.add_argument("--min_p", type=int, default=0)
     parser.add_argument("--repetition_penalty", type=float, default=1.0)
     parser.add_argument("--seed", type=int)
+    parser.add_argument("--print_back", action="store_true")
+    parser.add_argument("--go_back", action="store_true")
     args = parser.parse_args()
     device = torch.device(args.device)
     print(f"Using device: {device}")
@@ -79,6 +81,7 @@ def main():
             args.min_p,
             args.repetition_penalty,
             args.seed,
+            args.go_back,
         )
         console.print("Assistant: ", end="", style="green")
         text = ""
@@ -92,7 +95,10 @@ def main():
                 console.print(token["text"], style=style, end="")
                 text += token["text"]
             elif "back" in token:
-                console.print("⌫", style="red", end="")
+                if args.print_back:
+                    console.print("⌫", style="red", end="")
+                else:
+                    console.print("\b \b", end="")
         conv.append({"role": "assistant", "content": text.strip()})
         console.print()
 
