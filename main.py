@@ -17,6 +17,7 @@ else:
 print(f"Default device: {device}")
 
 torch.set_float32_matmul_precision("high")
+torch.backends.cudnn.benchmark = True
 
 
 def main():
