@@ -57,6 +57,7 @@ def main():
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--host", type=str, default="0.0.0.0")
     parser.add_argument("--max_length", type=int, default=512)
+    parser.add_argument("--context_length", type=int)
     parser.add_argument("--top_p", type=float, default=0.95)
     parser.add_argument("--top_k", type=int, default=40)
     parser.add_argument("--min_p", type=int, default=0)
@@ -97,6 +98,7 @@ def main():
                     min_p,
                     repetition_penalty,
                     seed,
+                    args.context_length,
                 ):
                     if "text" in chunk:
                         yield f"data: {ChatCompletionChunk(
@@ -136,6 +138,7 @@ def main():
                 min_p,
                 repetition_penalty,
                 seed,
+                args.context_length,
             )
             return Response(
                 content=ChatCompletion(
@@ -187,16 +190,11 @@ async def gen_no_stream(
     min_p,
     repetition_penalty,
     seed,
+    context_length,
 ):
     text = ""
     async for chunk in gen(
-        conv,
-        max_length,
-        top_p,
-        top_k,
-        min_p,
-        repetition_penalty,
-        seed,
+        conv, max_length, top_p, top_k, min_p, repetition_penalty, seed, context_length
     ):
         if "text" in chunk:
             text += chunk["text"]
@@ -211,6 +209,7 @@ async def gen(
     min_p,
     repetition_penalty,
     seed,
+    context_length,
 ):
     inputs = tokenizer.apply_chat_template(
         conv, return_tensors="pt", add_generation_prompt=True
@@ -229,6 +228,7 @@ async def gen(
             repetition_penalty,
             seed,
             False,
+            context_length,
         )
         for token in stream(it, tokenizer):
             yield token

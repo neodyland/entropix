@@ -10,6 +10,7 @@ from transformers import (
     LlamaForCausalLM,
     Qwen2ForCausalLM,
     MistralForCausalLM,
+    Phi3ForCausalLM,
 )
 
 DEFAULT_MASK_VALUE = -0.7 * float(torch.finfo(torch.float32).max)
@@ -78,17 +79,43 @@ def attention(
     kvcache: KVCache,
     attn_mask: Optional[torch.Tensor] = None,
 ) -> Tuple[torch.Tensor, KVCache, torch.Tensor]:
-    bsz, _, _ = x.shape
+    bsz, q_len, _ = x.shape
     n_rep = model_params.num_attention_heads // model_params.num_key_value_heads
-    xq = linear(x, model_params.num_attention_heads, layer_weights.q_proj).reshape(
-        bsz, -1, model_params.num_attention_heads, model_params.head_dim
-    )
-    xk = linear(x, model_params.num_key_value_heads, layer_weights.k_proj).reshape(
-        bsz, -1, model_params.num_key_value_heads, model_params.head_dim
-    )
-    xv = layer_weights.v_proj(x).reshape(
-        bsz, -1, model_params.num_key_value_heads, model_params.head_dim
-    )
+    if isinstance(weights, Phi3ForCausalLM):
+        qkv = linear(
+            x,
+            model_params.num_attention_heads + model_params.num_key_value_heads * 2,
+            layer_weights.qkv_proj,
+        )
+        # Calculate positions for splitting
+        query_pos = model_params.num_attention_heads * model_params.head_dim
+        key_value_pos = model_params.num_key_value_heads * model_params.head_dim
+
+        # Split the projection output
+        xq = qkv[..., -query_pos:]
+        xk = qkv[..., -query_pos - key_value_pos : -query_pos]
+        xv = qkv[..., : -query_pos - key_value_pos]
+
+        # Reshape and transpose
+        xq = xq.view(
+            bsz, q_len, model_params.num_attention_heads, model_params.head_dim
+        )
+        xk = xk.view(
+            bsz, q_len, model_params.num_key_value_heads, model_params.head_dim
+        )
+        xv = xv.view(
+            bsz, q_len, model_params.num_key_value_heads, model_params.head_dim
+        )
+    else:
+        xq = linear(x, model_params.num_attention_heads, layer_weights.q_proj).reshape(
+            bsz, -1, model_params.num_attention_heads, model_params.head_dim
+        )
+        xk = linear(x, model_params.num_key_value_heads, layer_weights.k_proj).reshape(
+            bsz, -1, model_params.num_key_value_heads, model_params.head_dim
+        )
+        xv = layer_weights.v_proj(x).reshape(
+            bsz, -1, model_params.num_key_value_heads, model_params.head_dim
+        )
     xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis, dtype=xq.dtype)
     keys, values, kvcache = kvcache.update(xk, xv, layer_idx, cur_pos, n_rep)
     xq = torch.permute(xq, (0, 2, 1, 3))  # (bs, n_heads, seqlen, head_dim)
@@ -176,10 +203,13 @@ def forward(
             kvcache,
             attn_mask=attn_mask,
         )
+        if isinstance(weights, Phi3ForCausalLM):
+            h_attn = layer.resid_attn_dropout(h_attn)
         if (
             isinstance(weights, LlamaForCausalLM)
             or isinstance(weights, MistralForCausalLM)
             or isinstance(weights, Qwen2ForCausalLM)
+            or isinstance(weights, Phi3ForCausalLM)
         ):
             h = h + h_attn
             h_mlp = layer.post_attention_layernorm(h)
@@ -190,6 +220,8 @@ def forward(
         h_mlp = layer.mlp(h_mlp)
         if isinstance(weights, Gemma2ForCausalLM):
             h_mlp = layer.post_feedforward_layernorm(h_mlp)
+        elif isinstance(weights, Phi3ForCausalLM):
+            h_mlp = layer.resid_mlp_dropout(h_mlp)
         h = h + h_mlp
     logits = weights.lm_head(weights.model.norm(h))
     if isinstance(weights, Gemma2ForCausalLM):

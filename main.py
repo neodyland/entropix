@@ -35,6 +35,7 @@ def main():
         default="bfloat16",
     )
     parser.add_argument("--max_length", type=int, default=4096)
+    parser.add_argument("--context_length", type=int)
     parser.add_argument("--prompt", type=str, default="Hello, my name is ")
     parser.add_argument("--device", type=str, default=device.type)
     parser.add_argument("--top_p", type=float, default=0.95)
@@ -60,7 +61,7 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained(args.model)
     inputs = tokenizer.encode(args.prompt, return_tensors="pt")
 
-    console.print(args.prompt, style="green", end="", flush=True)
+    console.print(args.prompt, style="green", end="")
     it = generate(
         weights,
         inputs,
@@ -74,6 +75,7 @@ def main():
         args.repetition_penalty,
         args.seed,
         args.go_back,
+        args.context_length,
     )
     for token in stream(it, tokenizer):
         if "text" in token:

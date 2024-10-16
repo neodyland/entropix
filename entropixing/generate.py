@@ -22,6 +22,7 @@ def generate(
     repetition_penalty: float = 1.0,
     seed: Optional[int] = None,
     go_back: bool = True,
+    context_len: int = None,
 ):
     if seed is not None:
         generator = torch.Generator(device=device).manual_seed(seed)
@@ -49,7 +50,7 @@ def generate(
     kvcache = KVCache(
         config.num_hidden_layers,
         bsz,
-        config.max_position_embeddings,
+        context_len or config.max_position_embeddings,
         config.num_key_value_heads,
         config.head_dim,
         device,

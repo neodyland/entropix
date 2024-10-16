@@ -37,6 +37,7 @@ def main():
         default="bfloat16",
     )
     parser.add_argument("--max_length", type=int, default=4096)
+    parser.add_argument("--context_length", type=int)
     parser.add_argument("--device", type=str, default=device.type)
     parser.add_argument("--top_p", type=float, default=0.95)
     parser.add_argument("--top_k", type=int, default=40)
@@ -83,6 +84,7 @@ def main():
             args.repetition_penalty,
             args.seed,
             args.go_back,
+            args.context_length,
         )
         console.print("Assistant: ", end="", style="green")
         text = ""
