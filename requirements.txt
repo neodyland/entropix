@@ -6,3 +6,4 @@ uvicorn
 openai
 rich
 datasets
+torchao

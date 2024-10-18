@@ -1,8 +1,5 @@
 from pydantic import TypeAdapter
-from transformers import (
-    AutoTokenizer,
-    AutoModelForCausalLM,
-)
+from transformers import AutoTokenizer, AutoModelForCausalLM, TorchAoConfig
 import torch
 import json
 from entropixing.generate import generate, stream
@@ -63,6 +60,7 @@ def main():
     parser.add_argument("--min_p", type=int, default=0)
     parser.add_argument("--repetition_penalty", type=float, default=1.0)
     parser.add_argument("--seed", type=int)
+    parser.add_argument("--quantize", action="store_true")
     args = parser.parse_args()
     device = torch.device(args.device)
     print(f"Using device: {device}")
@@ -73,6 +71,11 @@ def main():
         args.model,
         device_map=device,
         torch_dtype=dtype,
+        quantization_config=(
+            TorchAoConfig("int4_weight_only", ["self_attn"], group_size=64)
+            if args.quantize
+            else None
+        ),
     ).eval()
     tokenizer = AutoTokenizer.from_pretrained(args.model)
     app = FastAPI()
