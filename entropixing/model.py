@@ -84,37 +84,29 @@ def attention(
     if isinstance(weights, Phi3ForCausalLM):
         qkv = linear(
             x,
-            model_params.num_attention_heads + model_params.num_key_value_heads * 2,
+            model_params.num_attention_heads
+            + model_params.num_key_value_heads * 2,  # Total heads * 3 for Q, K, V
             layer_weights.qkv_proj,
         )
-        # Calculate positions for splitting
-        query_pos = model_params.num_attention_heads * model_params.head_dim
-        key_value_pos = model_params.num_key_value_heads * model_params.head_dim
-
-        # Split the projection output
-        xq = qkv[..., -query_pos:]
-        xk = qkv[..., -query_pos - key_value_pos : -query_pos]
-        xv = qkv[..., : -query_pos - key_value_pos]
-
-        # Reshape and transpose
-        xq = xq.view(
+        xq, xk, xv = torch.chunk(qkv, 3, dim=-1)
+        xq = xq.reshape(
             bsz, q_len, model_params.num_attention_heads, model_params.head_dim
         )
-        xk = xk.view(
+        xk = xk.reshape(
             bsz, q_len, model_params.num_key_value_heads, model_params.head_dim
         )
-        xv = xv.view(
+        xv = torch.chunk(layer_weights.qkv_proj(x), 3, dim=-1)[2].reshape(
             bsz, q_len, model_params.num_key_value_heads, model_params.head_dim
         )
     else:
         xq = linear(x, model_params.num_attention_heads, layer_weights.q_proj).reshape(
-            bsz, -1, model_params.num_attention_heads, model_params.head_dim
+            bsz, q_len, model_params.num_attention_heads, model_params.head_dim
         )
         xk = linear(x, model_params.num_key_value_heads, layer_weights.k_proj).reshape(
-            bsz, -1, model_params.num_key_value_heads, model_params.head_dim
+            bsz, q_len, model_params.num_key_value_heads, model_params.head_dim
         )
         xv = layer_weights.v_proj(x).reshape(
-            bsz, -1, model_params.num_key_value_heads, model_params.head_dim
+            bsz, q_len, model_params.num_key_value_heads, model_params.head_dim
         )
     xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis, dtype=xq.dtype)
     keys, values, kvcache = kvcache.update(xk, xv, layer_idx, cur_pos, n_rep)
@@ -136,6 +128,7 @@ def attention(
         isinstance(weights, LlamaForCausalLM)
         or isinstance(weights, MistralForCausalLM)
         or isinstance(weights, Qwen2ForCausalLM)
+        or isinstance(weights, Phi3ForCausalLM)
     ):
         scores = scores / math.sqrt(model_params.head_dim)
     pre_scores = scores

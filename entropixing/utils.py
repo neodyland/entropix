@@ -85,5 +85,5 @@ def is_supported_model(mod: str):
         "LlamaForCausalLM",
         "Qwen2ForCausalLM",
         "MistralForCausalLM",
-        # "Phi3ForCausalLM",wip
+        "Phi3ForCausalLM",
     ]
