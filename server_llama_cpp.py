@@ -137,8 +137,7 @@ async def gen_no_stream(
         max_length,
         stop,
     ):
-        if "text" in chunk:
-            text += chunk
+        text += chunk
     return text
 
 
