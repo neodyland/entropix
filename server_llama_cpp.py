@@ -12,14 +12,12 @@ from openai.types.chat import ChatCompletionChunk, ChatCompletion, ChatCompletio
 from openai.types.chat.chat_completion_chunk import Choice, ChoiceDelta
 from openai.types.chat.chat_completion import Choice as NostreamChoice
 from openai.types.chat.completion_create_params import (
-    CompletionCreateParams as CCompletionCreateParams,
+    CompletionCreateParams,
 )
-from openai.types.completion_create_params import CompletionCreateParams
 from uuid import uuid4
 import time
 
-adapter: TypeAdapter[CCompletionCreateParams] = TypeAdapter(CCompletionCreateParams)
-adapter2: TypeAdapter[CompletionCreateParams] = TypeAdapter(CompletionCreateParams)
+adapter: TypeAdapter[CompletionCreateParams] = TypeAdapter(CompletionCreateParams)
 
 
 def main():
@@ -44,62 +42,6 @@ def main():
     )
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer)
     app = FastAPI()
-
-    @app.post("/completions")
-    async def completion(body: Request) -> Response:
-        j = adapter2.validate_python(await body.json())
-        max_length = j.get("max_completion_tokens") or args.max_length
-        prompt = list(j["prompt"])
-        if j.get("stream"):
-
-            async def stream_generator():
-                async for chunk in gen(
-                    prompt,
-                    max_length,
-                ):
-                    yield f"data: {ChatCompletionChunk(
-                            id=str(uuid4()),
-                            choices=[Choice(delta=ChoiceDelta(content=chunk), index=0)],
-                            created=time.time() // 1000,
-                            model=j["model"],
-                            object="chat.completion.chunk",
-                        ).model_dump_json()}\n\n"
-                yield f"data: {ChatCompletionChunk(
-                    id=str(uuid4()),
-                    choices=[
-                        Choice(delta=ChoiceDelta(), finish_reason="stop", index=0)
-                    ],
-                    created=time.time() // 1000,
-                    model=j["model"],
-                    object="chat.completion.chunk",
-                ).model_dump_json()}\n\n"
-
-            return StreamingResponse(
-                content=stream_generator(), media_type="text/event-stream"
-            )
-        else:
-            text = await gen_no_stream(
-                prompt,
-                max_length,
-            )
-            return Response(
-                content=ChatCompletion(
-                    id=str(uuid4()),
-                    choices=[
-                        NostreamChoice(
-                            finish_reason="stop",
-                            message=ChatCompletionMessage(
-                                content=text, role="assistant"
-                            ),
-                            index=0,
-                        )
-                    ],
-                    created=time.time() // 1000,
-                    model=j["model"],
-                    object="chat.completion",
-                ).model_dump_json(),
-                media_type="application/json",
-            )
 
     @app.post("/chat/completions")
     async def chat_completion(body: Request) -> Response:
@@ -183,21 +125,20 @@ def main():
 async def gen_no_stream(
     conv,
     max_length,
+    stop=None,
 ):
     text = ""
     async for chunk in gen(
         conv,
         max_length,
+        stop,
     ):
         if "text" in chunk:
             text += chunk
     return text
 
 
-async def gen(
-    conv,
-    max_length,
-):
+async def gen(conv, max_length, stop=None):
     inputs = (
         tokenizer.apply_chat_template(conv, tokenize=False, add_generation_prompt=True)[
             len(tokenizer.bos_token) if tokenizer.bos_token else 0 :
@@ -205,14 +146,18 @@ async def gen(
         if isinstance(conv, list)
         else conv
     )
+    stops = [tokenizer.eos_token]
+    if stop:
+        stops.extend(stop)
     async with lock:
         it = generate_response(
             weights,
             inputs,
             max_new_tokens=max_length,
-            stop=[tokenizer.eos_token],
+            stop=stops,
         )
         for token in it:
+            print(token, end="", flush=True)
             yield token
 
 
