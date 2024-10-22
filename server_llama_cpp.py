@@ -52,7 +52,7 @@ def main():
         j = adapter.validate_python(await body.json())
         max_length = j.get("max_completion_tokens") or args.max_length
         messages = list(j["messages"])
-        if j.get("stream"):
+        if j.get("stream") == True:
 
             async def stream_generator():
                 async for chunk in gen(
