@@ -20,7 +20,11 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer)
     conv = []
     weights = Llama(
-        args.model, n_gpu_layers=args.ngl, n_ctx=args.context_length, verbose=False
+        args.model,
+        n_gpu_layers=args.ngl,
+        n_ctx=args.context_length,
+        verbose=False,
+        flash_attn=True,
     )
     while True:
         console.print("User: ", end="", style="green")

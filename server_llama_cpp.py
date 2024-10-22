@@ -38,7 +38,11 @@ def main():
     parser.add_argument("--repetition_penalty", type=float, default=1.0)
     args = parser.parse_args()
     weights = Llama(
-        args.model, n_gpu_layers=args.ngl, n_ctx=args.context_length, verbose=False
+        args.model,
+        n_gpu_layers=args.ngl,
+        n_ctx=args.context_length,
+        verbose=False,
+        flash_attn=True,
     )
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer)
     app = FastAPI()
