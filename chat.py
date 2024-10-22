@@ -28,7 +28,7 @@ def main():
     console = Console()
     parser = ArgumentParser()
     parser.add_argument(
-        "--model", type=str, required=True, default="google/gemma-2-2b-jpn-it"
+        "--model", type=str, required=True, default="google/gemma-2-2b-it"
     )
     parser.add_argument(
         "--dtype",
