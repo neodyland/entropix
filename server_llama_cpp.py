@@ -1,6 +1,6 @@
 from pydantic import TypeAdapter
 from transformers import AutoTokenizer
-from llama_cpp import Llama
+from llama_cpp import Llama, GGML_TYPE_Q4_0
 import json
 from entropixing.llama_cpp_impl import generate_response
 from asyncio import Lock
@@ -43,6 +43,8 @@ def main():
         n_ctx=args.context_length,
         verbose=False,
         flash_attn=True,
+        type_k=GGML_TYPE_Q4_0,
+        type_v=GGML_TYPE_Q4_0,
     )
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer)
     app = FastAPI()

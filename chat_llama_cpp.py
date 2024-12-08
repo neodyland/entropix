@@ -1,7 +1,7 @@
 from entropixing.llama_cpp_impl import generate_response
 from rich.console import Console
 from transformers import AutoTokenizer
-from llama_cpp import Llama
+from llama_cpp import Llama, GGML_TYPE_Q4_0
 
 
 def main():
@@ -25,6 +25,8 @@ def main():
         n_ctx=args.context_length,
         verbose=False,
         flash_attn=True,
+        type_k=GGML_TYPE_Q4_0,
+        type_v=GGML_TYPE_Q4_0,
     )
     while True:
         console.print("User: ", end="", style="green")
