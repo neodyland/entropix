@@ -7,3 +7,4 @@ openai
 rich
 datasets
 torchao
+cupy

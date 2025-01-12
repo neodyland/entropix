@@ -2,10 +2,18 @@
 from llama_cpp import LogitsProcessorList, LogitsProcessor, Llama
 from typing import List, Dict
 from enum import Enum
-import numpy as np
+
+try:
+    import cupy as np
+    import cupyx.scipy.special as sp
+
+    use_cupy = True
+except ImportError:
+    import numpy as np
+    import scipy.special as sp
+
+    use_cupy = False
 from collections import Counter, deque
-import scipy
-import scipy.special
 
 LN_2 = 0.69314718056  # ln(2) = 1.0 / LOG2_E
 
@@ -92,6 +100,8 @@ class VarentropyLogitsProcessor(LogitsProcessor):
         self.varentropy_window = deque(maxlen=self.config.window_size)
 
     def __call__(self, input_ids: List[int], logits: np.ndarray) -> List[float]:
+        if use_cupy:
+            logits = np.asarray(logits)
         # Calculate entropy and varentropy for the current token
         entropy, varentropy = self.calculate_varentropy_logsoftmax(logits)
         self.entropy_window.append(entropy)
@@ -163,7 +173,7 @@ class VarentropyLogitsProcessor(LogitsProcessor):
     def calculate_varentropy_logsoftmax(
         self, logits: np.ndarray, axis: int = -1
     ) -> tuple[float, float]:
-        log_probs = scipy.special.log_softmax(logits, axis=axis)
+        log_probs = sp.log_softmax(logits, axis=axis)
         probs = np.exp(log_probs)
         entropy = -np.sum(probs * log_probs, axis=axis) / np.log(2)
         entropy_expanded = np.expand_dims(entropy, axis=axis)
@@ -210,7 +220,9 @@ class VarentropyLogitsProcessor(LogitsProcessor):
         # Apply top-p (nucleus) sampling
         if 0.0 < top_p < 1.0:
             cumulative_probs = np.cumsum(top_k_probs)
-            cutoff_idx = np.searchsorted(cumulative_probs, top_p, side="right")
+            cutoff_idx = np.searchsorted(
+                cumulative_probs, np.array(top_p), side="right"
+            )
             if cutoff_idx == 0:
                 cutoff_idx = 1
             top_k_probs = top_k_probs[:cutoff_idx]
@@ -221,15 +233,15 @@ class VarentropyLogitsProcessor(LogitsProcessor):
 
         # If all probabilities are zero, return the highest probability token
         if np.sum(top_k_probs) <= 0:
-            return np.argmax(probs)
+            return np.argmax(probs).tolist()[0]
 
         # Sample from the filtered distribution
         try:
-            sample_idx = np.random.choice(len(top_k_probs), p=top_k_probs)
-            return indices[sample_idx]
+            sample_idx = np.random.choice(len(top_k_probs), p=top_k_probs, size=1)
+            return indices[sample_idx].tolist()[0]
         except ValueError:
             # If sampling fails, fall back to argmax
-            return np.argmax(probs)
+            return np.argmax(probs).tolist()
 
     def _adaptive_sample(self, logits: np.ndarray) -> int:
         # Calculate metrics (simplified version as we don't have access to attention scores)
@@ -249,14 +261,14 @@ class VarentropyLogitsProcessor(LogitsProcessor):
 
         # Score samples (simplified version)
         def score_sample(sample):
-            log_prob = np.log(scipy.special.softmax(logits, axis=-1)[sample])
+            log_prob = np.log(sp.softmax(logits, axis=-1)[sample])
             confidence_score = (1 - entropy) * self.config.ada_score_logits_ent + (
                 1 - varentropy
             ) * self.config.ada_score_logits_vent
             return log_prob + confidence_score
 
         sample_scores = [score_sample(sample) for sample in samples]
-        best_sample_idx = np.argmax(sample_scores)
+        best_sample_idx = np.argmax(np.array(sample_scores)).tolist()
         return samples[best_sample_idx]
 
     def check_ngram_repetition(self, tokens: List[int]) -> bool:
